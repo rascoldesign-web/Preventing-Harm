@@ -1,0 +1,1337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Michigan Overdose Visualization</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #000;
+            overflow: hidden;
+            height: 100vh;
+            font-family: 'Inter', sans-serif;
+            cursor: none;
+        }
+        #c {
+            position: relative;
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            touch-action: none;
+            z-index: 2;
+            background: transparent;
+        }
+        #cursor-container {
+            position: fixed;
+            pointer-events: none;
+            z-index: 200;
+            transform: translate(-50%, -50%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 40px;
+            height: 40px;
+            transition: opacity 0.3s ease;
+        }
+        #custom-cursor {
+            width: 8px;
+            height: 8px;
+            background: #ffecce;
+            border-radius: 50%;
+            position: absolute;
+            box-shadow: 0 0 15px rgba(255, 236, 206, 0.5);
+            transition: transform 0.04s linear;
+        }
+        .total-counter-wrapper {
+            position: fixed;
+            bottom: 20px;
+            right: 30px;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            pointer-events: none;
+        }
+        .counter-content {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            text-align: right;
+            opacity: 0;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            transform: translateY(10px);
+            white-space: nowrap;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .interacting .counter-content {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .stat-group {
+            display: flex;
+            flex-direction: column;
+            transition: opacity 0.5s ease, transform 0.5s ease;
+        }
+        #reversal-stat-group {
+            opacity: 0;
+            transform: translateY(10px);
+            pointer-events: none;
+        }
+        #reversal-stat-group.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .label {
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            margin-bottom: -2px;
+            display: block;
+            opacity: 0.8;
+        }
+        .sub-label {
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            opacity: 0.6;
+            margin-top: -4px;
+        }
+        .count {
+            font-size: 38px;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            min-width: 150px;
+        }
+        .deaths-color { color: #e62e22; }
+        .reversed-color { color: #2ecc71; }
+
+        /* Shared base for full-width centered overlay blocks */
+        .intro-text-wrapper, .intro-narrative-block {
+            position: absolute;
+            width: 100%;
+            text-align: left;
+            pointer-events: none;
+            z-index: 1;
+            display: flex;
+            justify-content: center;
+            transition: opacity 0.5s ease;
+        }
+        .intro-text-wrapper {
+            font-size: 16px;
+            line-height: 1.5;
+            font-weight: 400;
+            color: #e62e22;
+            flex-direction: column;
+            align-items: center;
+            opacity: 0.7;
+        }
+        .intro-narrative-block {
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            line-height: 1.8;
+        }
+        .intro-narrative-block span {
+            max-width: 550px;
+        }
+
+        .narrative-text {
+            position: absolute;
+            text-align: left;
+            pointer-events: none;
+            z-index: 1;
+            color: #e62e22;
+            font-size: 14px;
+            font-weight: 400;
+            letter-spacing: 0.05em;
+            opacity: 0.4;
+            transition: opacity 0.25s ease-out;
+        }
+        .narrative-text.centered { left: 50%; transform: translateX(-50%); width: calc(100% - 60px); max-width: 480px; text-align: left; }
+        .narrative-text.off-center { max-width: 400px; }
+        .narrative-text .highlight { font-weight: 600; text-shadow: 0 0 6px currentColor; }
+        .bold-glow { text-shadow: 0 0 6px currentColor; }
+
+        .interaction-hint {
+            position: absolute;
+            color: #e62e22;
+            font-size: 11px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            pointer-events: none;
+            opacity: 0.6;
+            width: 250px;
+            text-align: center;
+            transform: translate(-50%, 40px);
+            transition: opacity 0.8s ease;
+        }
+
+        #move-up-hint {
+            position: fixed;
+            top: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #e62e22;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            pointer-events: none;
+            z-index: 20;
+            transition: opacity 0.3s ease;
+        }
+        #loading-overlay {
+            position: fixed;
+            inset: 0;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            font-weight: 600;
+            color: #e62e22;
+            transition: opacity 0.5s ease;
+            pointer-events: none;
+        }
+        .reset-hint {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            color: #e62e22;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            opacity: 0.4;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        #restart-trigger {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            z-index: 10;
+            cursor: none;
+            pointer-events: all;
+            padding: 6px 0;
+        }
+        #restart-label {
+            color: #e62e22;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            opacity: 0.7;
+            transition: opacity 0.3s ease;
+            display: block;
+            margin-bottom: 5px;
+        }
+        #restart-trigger:hover #restart-label {
+            opacity: 1;
+        }
+        #restart-progress-track {
+            width: 100%;
+            height: 1px;
+            background: rgba(230, 46, 34, 0.2);
+        }
+        #restart-progress-bar {
+            height: 100%;
+            width: 0%;
+            background: #e62e22;
+        }
+
+        @keyframes textFadeInOut {
+            0%, 100% { opacity: 0.5; }
+            40%, 60% { opacity: 1; }
+        }
+        .fade-pulse {
+            animation: textFadeInOut 2s ease-in-out infinite;
+        }
+        /* Image Treatment System — apply .img-wrap + .img-caption to any image */
+        .img-wrap {
+            position: absolute;
+            width: 250px;
+            height: 250px;
+            transform: translateX(-50%);
+            outline: 1.5px solid #e62e22;
+            -webkit-mask-image: radial-gradient(ellipse at center, black 65%, transparent 95%);
+            mask-image: radial-gradient(ellipse at center, black 65%, transparent 95%);
+            transition: opacity 0.25s ease-out;
+        }
+        .img-wrap img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            filter: grayscale(1) brightness(0.75);
+            display: block;
+        }
+        .img-caption {
+            position: absolute;
+            width: 250px;
+            transform: translateX(-50%);
+            color: #e62e22;
+            font-size: 8px;
+            font-weight: 500;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            line-height: 1.5;
+            opacity: 0.4;
+            transition: opacity 0.25s ease-out;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+<div id="cursor-container">
+    <div id="custom-cursor"></div>
+</div>
+
+<div id="loading-overlay"></div>
+
+<div id="move-up-hint">MOVE UP</div>
+
+<div id="world-container" style="position: absolute; top: 0; left: 0; width: 100%;">
+    <div id="img-2023-wrap" class="img-wrap"
+         data-year="2023"
+         data-band-offset="0.45"
+         data-h-offset="0.2"
+         data-h-offset-cap="180"><img src="Images/Img_05.jpg" alt=""></div>
+    <div class="img-caption" data-for="img-2023-wrap">Chad Colwell, 32, being revived by EMS workers after overdosing in his truck in Miamisburg, Ohio.</div>
+
+    <div id="img-2019-wrap" class="img-wrap"
+         data-year="2019"
+         data-band-offset="0.4"
+         data-h-offset="0.18"
+         data-h-offset-cap="160"><img src="Images/Img_04.png" alt=""></div>
+    <div class="img-caption" data-for="img-2019-wrap">First Lady Melania Trump, before signing opioid legislation, marking two years of progress in combating the opioid crisis.</div>
+
+    <div id="img-2022-wrap" class="img-wrap" style="width: 300px; height: 250px;"
+         data-year="2022"
+         data-band-offset="0.25"
+         data-h-offset="-0.22"
+         data-h-offset-cap="200"><img src="Images/Img_03.jpg" alt=""></div>
+    <div class="img-caption" data-for="img-2022-wrap">A man overdosing on heroin collapses after first-responders administer Narcan, which blocks effects of opioids, Dayton, Ohio, USA.</div>
+
+    <div id="img-2011-wrap" class="img-wrap"
+         data-year="2011"
+         data-band-offset="0.4"
+         data-h-offset="0.2"
+         data-h-offset-cap="180"><img src="Images/Img_02.jpeg" alt=""></div>
+    <div class="img-caption" data-for="img-2011-wrap">The body of Brian Malmsbury is taken away after he overdosed on heroin in the basement of his family's home, Miamisburg, Ohio, USA.</div>
+
+    <div id="img-2015-wrap" class="img-wrap"
+         data-year="2014"
+         data-band-offset="0.1"
+         data-h-offset="-0.2"
+         data-h-offset-cap="180"><img src="Images/Img_01.jpg" alt=""></div>
+    <div class="img-caption" data-for="img-2015-wrap">Manchester, N.H., firefighters try to revive a man who overdosed in a building's stairwell</div>
+    <div id="narrative-2003" class="narrative-text centered" style="text-align: center;">
+        In 2003 there were <span class="highlight">980</span> deaths due to overdose in Michigan.
+    </div>
+    <div id="narrative-2005" class="narrative-text off-center" style="max-width: 340px;">
+        From 2004 onward, the <span class="highlight">opioid epidemic</span> that began in <span class="highlight">1999</span> amplified, leading to more deaths across the state.
+    </div>
+    <div id="narrative-2007" class="narrative-text off-center" style="max-width: 360px;">
+        Deaths continued to climb throughout the years, as opioids were <span class="highlight">overprescribed</span> and <span class="highlight">underregulated.</span>
+    </div>
+    <div id="narrative-2009" class="narrative-text off-center" style="max-width: 340px;">
+        These deaths weren't unnoticed as regulators made moves to solve <span class="highlight">symptoms</span> of the problem rather than the <span class="highlight">cause.</span>
+    </div>
+    <div id="narrative-2010" class="narrative-text off-center" style="max-width: 400px;">
+        <span class="highlight">Regulations</span> were soon placed on opioid prescriptions; however, this didn't solve the <span class="highlight">addictions</span> that people were dependent on. Users shifted to <span class="highlight">heroin</span>, a cheaper, stronger, more dangerous alternative.
+    </div>
+    <div id="narrative-2012" class="narrative-text off-center" style="color: #2ecc71; max-width: 380px;">
+        Across the country, national <span class="highlight">naloxone</span> policies began to expand, allowing naloxone, an <span class="highlight">overdose-reversing drug,</span> to become more accessible, but this was in its earliest stages.
+    </div>
+    <div id="narrative-2014" class="narrative-text off-center" style="color: #2ecc71; max-width: 320px;">
+        Efforts like these that work to reduce the effects of drug abuse without necessitating full abstinence are called <span class="highlight">"Harm Prevention."</span>
+    </div>
+    <div id="narrative-2015" class="narrative-text off-center" style="max-width: 360px;">
+        <span class="highlight">Fentanyl,</span> a powerful synthetic opioid painkiller, is increasingly found mixed into heroin, and users had no way of knowing as they became addicted to an <span class="highlight">even harder substance.</span>
+    </div>
+    <div id="narrative-2016" class="narrative-text centered bold-glow" style="font-weight: 600; max-width: 420px; left: 50%; transform: translateX(-50%); text-align: left;">
+        By 2016, <span class="highlight">fentanyl</span> had become the <span class="highlight">leading driver</span> of overdose deaths in the United States, overtaking heroin and <span class="highlight">accelerating mortality.</span>
+    </div>
+    <div id="narrative-2016b" class="narrative-text centered bold-glow" style="color: #2ecc71; font-weight: 600; max-width: 420px; left: 50%; transform: translateX(-50%); text-align: left;">
+        However, this wasn't the only thing that happened. <span class="highlight">Statewide naloxone standing orders</span> were passed in Michigan, allowing naloxone distribution and accessibility to grow and expand, <span class="highlight">saving more lives.</span>
+    </div>
+
+    <div id="narrative-2017a" class="narrative-text off-center" style="max-width: 300px;">
+        Michigan overdose deaths continued rising, driven <span class="highlight">almost entirely</span> by fentanyl.
+    </div>
+    <div id="narrative-2017b" class="narrative-text off-center" style="color: #2ecc71; max-width: 340px;">
+        Michigan's <span class="highlight">Good Samaritan Law</span> passes, granting <span class="highlight">legal protection</span> from arrest or prosecution when calling for help during an overdose.
+    </div>
+    <div id="narrative-2018a" class="narrative-text off-center" style="color: #2ecc71; max-width: 320px;">
+        <span class="highlight">Syringe service programs,</span> which provide users with clean syringes and <span class="highlight">treatment referrals,</span> begin.
+    </div>
+    <div id="narrative-2018b" class="narrative-text off-center" style="color: #2ecc71; max-width: 300px;">
+        For nearly the first time, <span class="highlight">overdose deaths decline,</span> showing the effects of harm prevention.
+    </div>
+    <div id="narrative-2020" class="narrative-text off-center" style="max-width: 420px;">
+        With the emergence of <span class="highlight">COVID-19,</span> treatment programs, recovery support, and harm reduction services statewide were <span class="highlight">disrupted.</span> Isolation, economic stress, and reduced access to care drove overdose deaths <span class="highlight">back up.</span>
+    </div>
+    <div id="narrative-2021a" class="narrative-text off-center" style="max-width: 300px;">
+        From this disruption, overdoses <span class="highlight">spiked</span> at a higher rate than in <span class="highlight">any other year.</span>
+    </div>
+    <div id="narrative-2021b" class="narrative-text off-center" style="max-width: 300px;">
+        Overdose deaths reach their peak across Michigan at <span class="highlight">31 deaths per 100,000.</span>
+    </div>
+    <div id="narrative-2021c" class="narrative-text off-center" style="max-width: 340px;">
+        Throughout the US, the highest recorded deaths were reached, with over <span class="highlight">80,000 opioid deaths</span> alone.
+    </div>
+    <div id="narrative-2021d" class="narrative-text off-center" style="color: #2ecc71; max-width: 320px;">
+        Even with these deaths, <span class="highlight">many more were prevented</span> as overdose reversals reached <span class="highlight">new highs.</span>
+    </div>
+    <div id="narrative-2022" class="narrative-text off-center" style="color: #2ecc71; max-width: 380px;">
+        As infrastructure began to reopen, <span class="highlight">deaths decreased.</span> Harm prevention methods expanded and helped reduce overdoses, supporting communities as they began to <span class="highlight">recover.</span>
+    </div>
+    <div id="narrative-2024" class="narrative-text off-center bold-glow" style="color: #2ecc71; font-weight: 600; max-width: 420px;">
+        2024 marks the third consecutive year of decline. In a few years, Michigan's overdose death rate has dropped from one of the highest in the nation to below the national average.
+    </div>
+
+    <div id="narrative-credits-photo" class="narrative-text centered" style="color: #e62e22; opacity: 1; font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap; width: max-content; max-width: none;">Photography By Philip Montgomery</div>
+    <div id="narrative-credits-exp" class="narrative-text centered" style="color: #e62e22; opacity: 1; font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap; width: max-content; max-width: none;">Experience By Thomas Rascol.</div>
+
+    <div id="narrative-end1" class="narrative-text centered bold-glow" style="color: #2ecc71; font-weight: 600; font-size: 16px; opacity: 1; white-space: nowrap; width: max-content; max-width: none;">
+        Michigan's progress reflects a broader pattern.
+    </div>
+    <div id="narrative-end2" class="narrative-text off-center" style="color: #2ecc71; max-width: 380px; opacity: 1;">
+        <span class="highlight">West Virginia,</span> and many states like it, have faced some of the <span class="highlight">highest overdose death rates</span> with more limited harm prevention access.
+    </div>
+    <div id="narrative-end3" class="narrative-text off-center" style="color: #2ecc71; max-width: 380px; opacity: 1;">
+        States like <span class="highlight">Massachusetts</span> have seen <span class="highlight">declining deaths</span> through expanded harm prevention efforts.
+    </div>
+    <div id="narrative-end4" class="narrative-text centered bold-glow" style="color: #2ecc71; font-weight: 700; opacity: 1; white-space: nowrap; width: max-content; max-width: none;">
+        The difference is measurable: where harm prevention is stronger, fewer people die.
+    </div>
+    <div id="narrative-end5" class="narrative-text centered" style="color: #2ecc71; opacity: 1; max-width: 380px; left: 50%; transform: translateX(-50%);">
+        In the end, it's up to us as a community to support harm prevention by backing <span class="highlight">local programs,</span> advocating for <span class="highlight">expanded treatment access,</span> and challenging <span class="highlight">stigma</span> around drug use.
+    </div>
+
+    <div id="below-intro-text" class="narrative-text centered fade-pulse bold-glow" style="font-weight: 600; white-space: nowrap; width: max-content; max-width: none;">
+        By the time this experience has ended, 3 people will have overdosed in the US.
+    </div>
+
+    <div id="intro-stats-red" class="intro-narrative-block" style="color: #e62e22; text-transform: none;">
+        <span>Michigan ranks 14th among U.S. states for drug addiction. Every day, month, and year, lives are lost to overdose. Relief efforts exist, but they are often met with scrutiny, slowed by policy, stigma, and uneven access to care.</span>
+    </div>
+
+    <div id="pill-instruction" class="interaction-hint">
+        Push aside the pill with the mouse.
+    </div>
+
+    <div class="intro-text-wrapper" id="intro-label">
+        <span>Each pill represents one death by overdose in Michigan.</span>
+    </div>
+
+    <div id="intro-reality-green" class="intro-narrative-block" style="color: #2ecc71; text-transform: none;">
+        <span>This experience explores the reality behind these deaths, and the real effect that harm prevention has in saving lives.</span>
+    </div>
+
+    <div class="intro-text-wrapper" id="green-intro-label" style="color: #2ecc71;">
+        <span>Moving forward, each green pill represents one overdose reversed through harm prevention methods.</span>
+    </div>
+
+</div>
+
+
+<div class="total-counter-wrapper" id="ui-container">
+    <div class="counter-content">
+        <div class="stat-group" id="reversal-stat-group">
+            <span class="label reversed-color">Total Reversals</span>
+            <div class="count reversed-color" id="running-reversals">0</div>
+            <span class="sub-label reversed-color">Since 2018</span>
+        </div>
+        <div class="stat-group">
+            <span class="label deaths-color">Total Deaths</span>
+            <div class="count deaths-color" id="running-total">0</div>
+            <span class="sub-label deaths-color">From 2003</span>
+        </div>
+    </div>
+</div>
+
+<canvas id="c"></canvas>
+
+<div id="restart-trigger">
+    <span id="restart-label">Restart Experience</span>
+    <div id="restart-progress-track">
+        <div id="restart-progress-bar"></div>
+    </div>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const worldContainer = document.getElementById('world-container');
+const uiContainer = document.getElementById('ui-container');
+const introLabel = document.getElementById('intro-label');
+const totalDisplay = document.getElementById('running-total');
+const reversalDisplay = document.getElementById('running-reversals');
+const reversalStatGroup = document.getElementById('reversal-stat-group');
+const loadingOverlay = document.getElementById('loading-overlay');
+const cursorContainer = document.getElementById('cursor-container');
+const customCursor = document.getElementById('custom-cursor');
+const pillInstruction = document.getElementById('pill-instruction');
+const moveUpHint = document.getElementById('move-up-hint');
+const greenIntroLabel = document.getElementById('green-intro-label');
+const introRealityGreen = document.getElementById('intro-reality-green');
+const belowIntroText = document.getElementById('below-intro-text');
+const introStatsRed = document.getElementById('intro-stats-red');
+
+const narrativeEls = {
+    2003: { el: document.getElementById('narrative-2003'), centered: true },
+    2005: { el: document.getElementById('narrative-2005'), centered: false },
+    2007: { el: document.getElementById('narrative-2007'), centered: false },
+    2009: { el: document.getElementById('narrative-2009'), centered: false },
+    2010: { el: document.getElementById('narrative-2010'), centered: false },
+    2012: { el: document.getElementById('narrative-2012'), centered: false },
+    2014: { el: document.getElementById('narrative-2014'), centered: false },
+    2015: { el: document.getElementById('narrative-2015'), centered: false },
+    2016: { el: document.getElementById('narrative-2016'), centered: true },
+    '2016b': { el: document.getElementById('narrative-2016b'), centered: true },
+    '2017a': { el: document.getElementById('narrative-2017a'), centered: false },
+    '2017b': { el: document.getElementById('narrative-2017b'), centered: false },
+    '2018a': { el: document.getElementById('narrative-2018a'), centered: false },
+    '2018b': { el: document.getElementById('narrative-2018b'), centered: false },
+    2020: { el: document.getElementById('narrative-2020'), centered: false },
+    '2021a': { el: document.getElementById('narrative-2021a'), centered: false },
+    '2021b': { el: document.getElementById('narrative-2021b'), centered: false },
+    '2021c': { el: document.getElementById('narrative-2021c'), centered: false },
+    '2021d': { el: document.getElementById('narrative-2021d'), centered: false },
+    2022: { el: document.getElementById('narrative-2022'), centered: false },
+    2024: { el: document.getElementById('narrative-2024'), centered: false },
+};
+
+let W = 0, H = 0, dpr = 1;
+let scrollY = 0, targetScrollY = 0, worldMaxHeight = 0;
+let mouse = { x: -9999, y: -9999 };
+let particles = [], benchmarks = [];
+let isActuallyInteracting = false;
+let legendPill = null, legendAnchor = { x: 0, y: 0 };
+let greenLegendPill = null, greenLegendAnchor = { x: 0, y: 0 };
+let beatIntensity = 0;
+let beatPhase = 0;
+let lastBeatTime = null;
+let smoothedCycleDuration = 1000;
+let reversalTriggerY = 0;
+let frameCount = 0;
+let cachedDeathCount = 0, cachedReversalCount = 0;
+let narrativeCache = [];
+let b2003Cached = null;
+let prevScrollY = 0;
+let restartPending = false;
+let idleTimer = null;
+function resetIdleTimer() {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => initParticles(true), 120000);
+}
+let introPills = [];
+const BUCKET_SIZE = 200;
+let particleBuckets = new Map();
+let maxBucketKey = 0;
+let audioCtx = null;
+let clickBuffer = null;
+let lastClickMs = 0;
+let collisionThisFrame = false;
+
+const THEME_RED = '#e62e22';
+const DATA = [
+    { year: 2003, count: 980, reversed: 0 },
+    { year: 2004, count: 1050, reversed: 0 },
+    { year: 2005, count: 1120, reversed: 0 },
+    { year: 2006, count: 1220, reversed: 0 },
+    { year: 2007, count: 1300, reversed: 0 },
+    { year: 2008, count: 1320, reversed: 0 },
+    { year: 2009, count: 1330, reversed: 0 },
+    { year: 2010, count: 1350, reversed: 0 },
+    { year: 2011, count: 1420, reversed: 0 },
+    { year: 2012, count: 1480, reversed: 0 },
+    { year: 2013, count: 1520, reversed: 0 },
+    { year: 2014, count: 1650, reversed: 0 },
+    { year: 2015, count: 1973, reversed: 0 },
+    { year: 2016, count: 2342, reversed: 0 },
+    { year: 2017, count: 2665, reversed: 0, gapAfter: 1600 },
+    { year: 2018, count: 2575, reversed: 150 },
+    { year: 2019, count: 2358, reversed: 850 },
+    { year: 2020, count: 2750, reversed: 2060 },
+    { year: 2021, count: 3108, reversed: 3620 },
+    { year: 2022, count: 3028, reversed: 5750 },
+    { year: 2023, count: 2992, reversed: 5180 },
+    { year: 2024, count: 1976, reversed: 5180 }
+];
+
+const TOTAL_GAP = 1600;
+const PIXELS_PER_DEATH = 0.55;
+const TOP_MARGIN = 4000;
+const BOTTOM_MARGIN = 2200;
+const EMPTY_BELOW = 900; // blank section below intro, hidden at scroll start
+const PUSH_R = 70;
+const PUSH_FORCE = 5.0;
+const FRICTION = 0.91;
+const ICON_WIDTH = 18;
+const ICON_HEIGHT = 8;
+const SCROLL_SPEED = 14;
+
+let iconOffscreen, greenIconOffscreen;
+
+function prepareIconGraphic() {
+    const w = ICON_WIDTH * dpr, h = ICON_HEIGHT * dpr;
+    const thickness = h * 0.22;
+    const radius = h / 2 - thickness / 2;
+
+    function drawPill(offscreen, color) {
+        offscreen.width = w;
+        offscreen.height = h;
+        const cx = offscreen.getContext('2d');
+        cx.strokeStyle = color;
+        cx.lineWidth = thickness;
+        cx.lineCap = 'round';
+        cx.lineJoin = 'round';
+        cx.beginPath();
+        cx.moveTo(radius + thickness, thickness / 2);
+        cx.lineTo(w - radius - thickness, thickness / 2);
+        cx.arc(w - radius - thickness, h / 2, radius, -Math.PI / 2, Math.PI / 2);
+        cx.lineTo(radius + thickness, h - thickness / 2);
+        cx.arc(radius + thickness, h / 2, radius, Math.PI / 2, -Math.PI / 2);
+        cx.closePath();
+        cx.stroke();
+        cx.beginPath();
+        cx.moveTo(w / 2, thickness / 2);
+        cx.lineTo(w / 2, h - thickness / 2);
+        cx.stroke();
+    }
+
+    if (!iconOffscreen) iconOffscreen = document.createElement('canvas');
+    if (!greenIconOffscreen) greenIconOffscreen = document.createElement('canvas');
+    drawPill(iconOffscreen, THEME_RED);
+    drawPill(greenIconOffscreen, '#2ecc71');
+}
+
+function initAudio() {
+    if (audioCtx) return;
+    try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const sr = audioCtx.sampleRate;
+        const len = Math.floor(sr * 0.028);
+        clickBuffer = audioCtx.createBuffer(1, len, sr);
+        const d = clickBuffer.getChannelData(0);
+        for (let i = 0; i < len; i++) {
+            d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 6);
+        }
+    } catch(e) {
+        audioCtx = null;
+    }
+}
+
+function playClick() {
+    if (!audioCtx || !clickBuffer) return;
+    const now = performance.now();
+    if (now - lastClickMs < 65) return;
+    lastClickMs = now;
+    const src = audioCtx.createBufferSource();
+    src.buffer = clickBuffer;
+    const filt = audioCtx.createBiquadFilter();
+    filt.type = 'lowpass';
+    filt.frequency.value = 110 + Math.random() * 60;
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(0.16, audioCtx.currentTime);
+    src.connect(filt);
+    filt.connect(gain);
+    gain.connect(audioCtx.destination);
+    src.start();
+}
+
+function buildNarrativeCache() {
+    narrativeCache = [];
+    for (const { el } of Object.values(narrativeEls)) {
+        if (!el) continue;
+        narrativeCache.push({
+            el,
+            worldTop: el.offsetTop,
+            worldLeft: el.offsetLeft,
+            worldRight: el.offsetLeft + el.offsetWidth,
+            worldBottom: el.offsetTop + el.offsetHeight
+        });
+    }
+    document.querySelectorAll('.img-wrap').forEach(imgWrap => {
+        narrativeCache.push({
+            el: imgWrap,
+            worldTop: imgWrap.offsetTop,
+            worldLeft: imgWrap.offsetLeft - imgWrap.offsetWidth / 2,
+            worldRight: imgWrap.offsetLeft + imgWrap.offsetWidth / 2,
+            worldBottom: imgWrap.offsetTop + imgWrap.offsetHeight,
+            threshold: 12,
+            minOpacity: 0.5
+        });
+    });
+    document.querySelectorAll('.img-caption').forEach(caption => {
+        narrativeCache.push({
+            el: caption,
+            worldTop: caption.offsetTop,
+            worldLeft: caption.offsetLeft - caption.offsetWidth / 2,
+            worldRight: caption.offsetLeft + caption.offsetWidth / 2,
+            worldBottom: caption.offsetTop + caption.offsetHeight,
+            threshold: 12,
+            maxOpacity: 0.8
+        });
+    });
+}
+
+function positionImages() {
+    document.querySelectorAll('.img-wrap').forEach(imgWrap => {
+        const year = parseInt(imgWrap.dataset.year);
+        const bandOffset = parseFloat(imgWrap.dataset.bandOffset || '0.1');
+        const hFrac = parseFloat(imgWrap.dataset.hOffset || '0');
+        const hCap = parseFloat(imgWrap.dataset.hOffsetCap || '9999');
+        const b = benchmarks.find(b => b.year === year);
+        if (!b) return;
+
+        const rawOffset = hFrac * W;
+        const cappedOffset = Math.sign(rawOffset) * Math.min(Math.abs(rawOffset), hCap);
+        const imgTop = b.y + b.totalCount * PIXELS_PER_DEATH * bandOffset;
+        const imgLeft = W / 2 + cappedOffset;
+        imgWrap.style.top = imgTop + 'px';
+        imgWrap.style.left = imgLeft + 'px';
+
+        const caption = document.querySelector(`.img-caption[data-for="${imgWrap.id}"]`);
+        if (caption) {
+            caption.style.top = (imgTop + (imgWrap.offsetHeight || 250) + 8) + 'px';
+            caption.style.left = imgLeft + 'px';
+            caption.style.width = (imgWrap.offsetWidth || 250) + 'px';
+        }
+    });
+}
+
+function resizeMetrics() {
+    dpr = window.devicePixelRatio || 1;
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+}
+
+function updateStaticElements() {
+    const totalPills = DATA.reduce((sum, d) => sum + d.count + d.reversed, 0);
+    const worldH = totalPills * PIXELS_PER_DEATH + TOTAL_GAP + TOP_MARGIN + BOTTOM_MARGIN + EMPTY_BELOW;
+    worldMaxHeight = worldH;
+
+    const anchorY = worldH - EMPTY_BELOW - 100;
+
+    if (introStatsRed) introStatsRed.style.top = (anchorY - 500) + 'px';
+    if (pillInstruction) {
+        pillInstruction.style.top = (anchorY - 1150) + 'px';
+        pillInstruction.style.left = (W / 2) + 'px';
+    }
+    if (introLabel) introLabel.style.top = (anchorY - 1210) + 'px';
+    if (introRealityGreen) introRealityGreen.style.top = (anchorY - 250) + 'px';
+    if (belowIntroText) belowIntroText.style.top = (worldH - EMPTY_BELOW / 2) + 'px';
+
+    const pillCenterY = worldH - EMPTY_BELOW / 2;
+    introPills = [
+        { x: W / 2 - 70 + (Math.random() - 0.5) * 40, y: pillCenterY - 55 + (Math.random() - 0.5) * 12, vx: 0, vy: 0, rotation: Math.random() * Math.PI * 2, rotVel: (Math.random() - 0.5) * 0.01, isLegend: true, isGreen: false },
+        { x: W / 2 + 50 + (Math.random() - 0.5) * 40, y: pillCenterY - 42 + (Math.random() - 0.5) * 12, vx: 0, vy: 0, rotation: Math.random() * Math.PI * 2, rotVel: (Math.random() - 0.5) * 0.01, isLegend: true, isGreen: false },
+        { x: W / 2 - 20 + (Math.random() - 0.5) * 50, y: pillCenterY + 65 + (Math.random() - 0.5) * 12, vx: 0, vy: 0, rotation: Math.random() * Math.PI * 2, rotVel: (Math.random() - 0.5) * 0.01, isLegend: true, isGreen: false },
+    ];
+
+    const narrativeConfig = {
+        2003: (b) => {
+            const centerY = b.y + (b.totalCount * PIXELS_PER_DEATH) / 2;
+            narrativeEls[2003].el.style.top = (centerY - 10) + 'px';
+        },
+        2005: (b) => {
+            narrativeEls[2005].el.style.left = (W / 2 - Math.min(W * 0.3, 300)) + 'px';
+            narrativeEls[2005].el.style.top = (b.y + b.totalCount * PIXELS_PER_DEATH * 0.6) + 'px';
+        },
+        2007: (b) => {
+            narrativeEls[2007].el.style.left = (W / 2 + 80) + 'px';
+            narrativeEls[2007].el.style.top = (b.y + b.totalCount * PIXELS_PER_DEATH * 0.4) + 'px';
+        },
+        2009: (b) => {
+            narrativeEls[2009].el.style.left = (W / 2 + Math.min(W * 0.15, 140)) + 'px';
+            narrativeEls[2009].el.style.top = (b.y + b.totalCount * PIXELS_PER_DEATH * 0.5) + 'px';
+        },
+        2010: (b) => {
+            narrativeEls[2010].el.style.left = (W / 2 - 30) + 'px';
+            narrativeEls[2010].el.style.top = (b.y + b.totalCount * PIXELS_PER_DEATH * 0.3) + 'px';
+        },
+        2012: (b) => {
+            narrativeEls[2012].el.style.left = (W / 2 - Math.min(W * 0.28, 260)) + 'px';
+            narrativeEls[2012].el.style.top = (b.y + b.totalCount * PIXELS_PER_DEATH * 0.4) + 'px';
+        },
+        2014: (b) => {
+            narrativeEls[2014].el.style.left = (W / 2 + 80) + 'px';
+            narrativeEls[2014].el.style.top = (b.y + b.totalCount * PIXELS_PER_DEATH * 0.5) + 'px';
+        },
+        2015: (b) => {
+            narrativeEls[2015].el.style.left = (W / 2 - Math.min(W * 0.28, 260)) + 'px';
+            narrativeEls[2015].el.style.top = (b.y + b.totalCount * PIXELS_PER_DEATH * 0.4) + 'px';
+        },
+        '2017a': (b) => {
+            narrativeEls['2017a'].el.style.left = (W / 2 - Math.min(W * 0.35, 330)) + 'px';
+            narrativeEls['2017a'].el.style.top = (b.y + b.totalCount * PIXELS_PER_DEATH * 0.25) + 'px';
+        },
+        '2017b': (b) => {
+            narrativeEls['2017b'].el.style.left = (W / 2 + Math.min(W * 0.25, 240)) + 'px';
+            narrativeEls['2017b'].el.style.top = (b.y + b.totalCount * PIXELS_PER_DEATH * 0.65) + 'px';
+        },
+        '2018a': (b) => {
+            narrativeEls['2018a'].el.style.left = (W / 2 - Math.min(W * 0.3, 280)) + 'px';
+            narrativeEls['2018a'].el.style.top = (b.y + b.totalCount * PIXELS_PER_DEATH * 0.3) + 'px';
+        },
+        '2018b': (b) => {
+            narrativeEls['2018b'].el.style.left = (W / 2 + Math.min(W * 0.24, 220)) + 'px';
+            narrativeEls['2018b'].el.style.top = (b.y + b.totalCount * PIXELS_PER_DEATH * 0.68) + 'px';
+        },
+        2020: (b) => {
+            narrativeEls[2020].el.style.left = (W / 2 - Math.min(W * 0.25, 240)) + 'px';
+            narrativeEls[2020].el.style.top = (b.y + b.totalCount * PIXELS_PER_DEATH * 0.4) + 'px';
+        },
+        '2021a': (b) => {
+            narrativeEls['2021a'].el.style.left = (W / 2 + Math.min(W * 0.18, 170)) + 'px';
+            narrativeEls['2021a'].el.style.top = (b.y + b.totalCount * PIXELS_PER_DEATH * 0.12) + 'px';
+        },
+        '2021b': (b) => {
+            narrativeEls['2021b'].el.style.left = (W / 2 - Math.min(W * 0.22, 210)) + 'px';
+            narrativeEls['2021b'].el.style.top = (b.y + b.totalCount * PIXELS_PER_DEATH * 0.3) + 'px';
+        },
+        '2021c': (b) => {
+            narrativeEls['2021c'].el.style.left = (W / 2 + Math.min(W * 0.2, 190)) + 'px';
+            narrativeEls['2021c'].el.style.top = (b.y + b.totalCount * PIXELS_PER_DEATH * 0.5) + 'px';
+        },
+        '2021d': (b) => {
+            narrativeEls['2021d'].el.style.left = (W / 2 - Math.min(W * 0.25, 230)) + 'px';
+            narrativeEls['2021d'].el.style.top = (b.y + b.totalCount * PIXELS_PER_DEATH * 0.72) + 'px';
+        },
+        2022: (b) => {
+            narrativeEls[2022].el.style.left = (W / 2 + Math.min(W * 0.18, 170)) + 'px';
+            narrativeEls[2022].el.style.top = (b.y + b.totalCount * PIXELS_PER_DEATH * 0.45) + 'px';
+        },
+        2024: (b) => {
+            narrativeEls[2024].el.style.left = (W / 2 - Math.min(W * 0.22, 210)) + 'px';
+            narrativeEls[2024].el.style.top = (b.y + b.totalCount * PIXELS_PER_DEATH * 0.5) + 'px';
+        },
+        2016: (b) => {
+            const b2017 = benchmarks.find(x => x.year === 2017);
+            const gapStart = b2017 ? b2017.y + b2017.totalCount * PIXELS_PER_DEATH : b.y;
+            const greenIntroY = gapStart + 200;
+
+            reversalTriggerY = gapStart + 300;
+            narrativeEls[2016].el.style.top = (gapStart + 1000) + 'px';
+            if (narrativeEls['2016b']?.el) narrativeEls['2016b'].el.style.top = (gapStart + 700) + 'px';
+            if (greenIntroLabel) greenIntroLabel.style.top = greenIntroY + 'px';
+
+
+            greenLegendAnchor = { x: W / 2, y: greenIntroY + 70 };
+            greenLegendPill = { x: greenLegendAnchor.x, y: greenLegendAnchor.y, vx: 0, vy: 0, rotation: 0, rotVel: 0, isLegend: true, isGreen: true };
+        },
+    };
+
+    for (const [year, fn] of Object.entries(narrativeConfig)) {
+        const b = benchmarks.find(b => b.year === parseInt(year));
+        if (b && narrativeEls[year]?.el) fn(b);
+    }
+
+    const b2024 = benchmarks.find(b => b.year === 2024);
+    if (b2024) {
+        const gapTop = b2024.y;
+        const endEl1 = document.getElementById('narrative-end1');
+        const endEl2 = document.getElementById('narrative-end2');
+        const endEl3 = document.getElementById('narrative-end3');
+        const endEl4 = document.getElementById('narrative-end4');
+        const endEl5 = document.getElementById('narrative-end5');
+        if (endEl1) endEl1.style.top = (gapTop - 550) + 'px';
+        if (endEl2) {
+            endEl2.style.left = (W / 2 - Math.min(W * 0.28, 260)) + 'px';
+            endEl2.style.top = (gapTop - 950) + 'px';
+        }
+        if (endEl3) {
+            endEl3.style.left = (W / 2 + 80) + 'px';
+            endEl3.style.top = (gapTop - 1300) + 'px';
+        }
+        if (endEl4) endEl4.style.top = (gapTop - 1650) + 'px';
+        if (endEl5) endEl5.style.top = (gapTop - 2000) + 'px';
+        const creditsPhoto = document.getElementById('narrative-credits-photo');
+        const creditsExp = document.getElementById('narrative-credits-exp');
+        if (creditsPhoto) { creditsPhoto.style.top = (gapTop - 3050) + 'px'; creditsPhoto.style.left = '50%'; }
+        if (creditsExp) { creditsExp.style.top = (gapTop - 3200) + 'px'; creditsExp.style.left = '50%'; }
+    }
+
+    legendAnchor = { x: W / 2, y: anchorY - 1150 };
+    legendPill = { x: legendAnchor.x, y: legendAnchor.y, vx: 0, vy: 0, rotation: 0, rotVel: 0, isLegend: true };
+
+    prepareIconGraphic();
+    positionImages();
+    b2003Cached = benchmarks.find(b => b.year === 2003) || null;
+    buildNarrativeCache();
+}
+
+function initParticles(resetScroll = true) {
+    resizeMetrics();
+    benchmarks = [];
+    particles = [];
+
+    const totalPills = DATA.reduce((sum, d) => sum + d.count + d.reversed, 0);
+    const worldH = totalPills * PIXELS_PER_DEATH + TOTAL_GAP + TOP_MARGIN + BOTTOM_MARGIN + EMPTY_BELOW;
+    worldMaxHeight = worldH;
+
+    const funnelStartWidth = 60;
+    const funnelEndWidth = W - ICON_WIDTH * 4;
+
+    // Per-year widths for 2020+ proportional to death count
+    const modernData = DATA.filter(d => d.year >= 2020);
+    const peakDeaths = Math.max(...modernData.map(d => d.count)); // 2021 = 3108
+    const yearWidth = {};
+    for (const d of modernData) {
+        yearWidth[d.year] = funnelEndWidth * (d.count / peakDeaths);
+    }
+    yearWidth[2020] = funnelEndWidth; // 2020 reaches the edge regardless of proportionality
+    // Width at the older boundary of each modern segment (what the next-older year would give)
+    const olderBoundaryWidth = {};
+    for (const d of modernData) {
+        olderBoundaryWidth[d.year] = d.year - 1 >= 2020 ? yearWidth[d.year - 1] : funnelEndWidth;
+    }
+
+    if (resetScroll) {
+        targetScrollY = worldH - H;
+        scrollY = targetScrollY;
+    }
+
+    let currentY = TOP_MARGIN;
+    const reversedData = [...DATA].reverse();
+
+    // Pre-pass: compute y start/end for each year so we can match the linear formula at boundaries
+    let yFor2021 = TOP_MARGIN;
+    const ySegments = {};
+    let preY = TOP_MARGIN;
+    for (const item of reversedData) {
+        const segH = (item.count + item.reversed) * PIXELS_PER_DEATH;
+        ySegments[item.year] = { start: preY, end: preY + segH };
+        preY += segH + (item.gapAfter || 0);
+        if (item.year === 2021) yFor2021 = ySegments[2021].start;
+    }
+
+    // The exact linear-formula width at the bottom of 2020's segment, so 2020→2019 blends seamlessly
+    const y2020End = ySegments[2020].end;
+    olderBoundaryWidth[2020] = funnelStartWidth + (funnelEndWidth - funnelStartWidth) * (1 - (y2020End - yFor2021) / (worldH - yFor2021));
+
+    for (const item of reversedData) {
+        const totalYearly = item.count + item.reversed;
+        const segmentHeight = totalYearly * PIXELS_PER_DEATH;
+        benchmarks.push({ year: item.year, count: item.count, totalCount: totalYearly, y: currentY });
+
+        for (let j = 0; j < totalYearly; j++) {
+            const y = currentY + Math.random() * segmentHeight;
+            let currentWidth;
+            if (item.year >= 2020) {
+                // Interpolate within the segment from this year's width (top) toward the older boundary (bottom)
+                const t = (y - currentY) / segmentHeight;
+                currentWidth = yearWidth[item.year] + (olderBoundaryWidth[item.year] - yearWidth[item.year]) * t;
+            } else {
+                currentWidth = funnelStartWidth + (funnelEndWidth - funnelStartWidth) * (1 - (y - yFor2021) / (worldH - yFor2021));
+            }
+            const x = W / 2 - currentWidth / 2 + Math.random() * currentWidth;
+
+            particles.push({
+                x, y,
+                vx: 0, vy: 0,
+                rotation: Math.random() * Math.PI * 2,
+                rotVel: (Math.random() - 0.5) * 0.01,
+                isGreen: j >= item.count
+            });
+        }
+        currentY += segmentHeight + (item.gapAfter || 0);
+    }
+
+    particleBuckets = new Map();
+    maxBucketKey = 0;
+    for (const p of particles) {
+        const key = Math.floor(p.y / BUCKET_SIZE);
+        if (key > maxBucketKey) maxBucketKey = key;
+        let bkt = particleBuckets.get(key);
+        if (!bkt) { bkt = []; particleBuckets.set(key, bkt); }
+        bkt.push(p);
+    }
+
+    updateStaticElements();
+}
+
+function resolveCollisions() {
+    const minDist = ICON_WIDTH * 0.75;
+    const cellSize = minDist * 2;
+    const grid = new Map();
+    const viewTop = scrollY - 50, viewBottom = scrollY + H + 50;
+
+    const activeParticles = [];
+    if (legendPill) activeParticles.push(legendPill);
+    if (greenLegendPill) activeParticles.push(greenLegendPill);
+    for (const ip of introPills) activeParticles.push(ip);
+
+    for (const p of particles) {
+        if (p.y > viewTop && p.y < viewBottom) activeParticles.push(p);
+    }
+
+    for (const p of activeParticles) {
+        const key = (Math.floor(p.x / cellSize) << 16) | Math.floor(p.y / cellSize);
+        if (!grid.has(key)) grid.set(key, []);
+        grid.get(key).push(p);
+    }
+
+    for (const p of activeParticles) {
+        const gx = Math.floor(p.x / cellSize), gy = Math.floor(p.y / cellSize);
+        for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+                const cell = grid.get(((gx + dx) << 16) | (gy + dy));
+                if (!cell) continue;
+                for (const b of cell) {
+                    if (b === p) continue;
+                    const ddx = b.x - p.x, ddy = b.y - p.y;
+                    const distSq = ddx * ddx + ddy * ddy;
+                    if (distSq < minDist * minDist && distSq > 0.001) {
+                        const dist = Math.sqrt(distSq);
+                        const overlap = (minDist - dist) * 0.35;
+                        const nx = ddx / dist, ny = ddy / dist;
+                        p.x -= nx * overlap; p.y -= ny * overlap;
+                        b.x += nx * overlap; b.y += ny * overlap;
+                        if (!collisionThisFrame) {
+                            const relSpeed = Math.abs(b.vx - p.vx) + Math.abs(b.vy - p.vy);
+                            if (relSpeed > 0.5) collisionThisFrame = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+function updateMouse(e) {
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    mouse.x = clientX;
+    mouse.y = clientY;
+    if (cursorContainer) {
+        cursorContainer.style.left = clientX + 'px';
+        cursorContainer.style.top = clientY + 'px';
+    }
+}
+
+canvas.addEventListener('mousemove', e => { initAudio(); updateMouse(e); resetIdleTimer(); });
+canvas.addEventListener('wheel', e => { targetScrollY += e.deltaY * 0.6; e.preventDefault(); resetIdleTimer(); }, { passive: false });
+canvas.addEventListener('touchstart', e => { updateMouse(e); resetIdleTimer(); if (cursorContainer) cursorContainer.style.opacity = '1'; });
+canvas.addEventListener('touchend', () => { if (cursorContainer) cursorContainer.style.opacity = '0'; });
+canvas.addEventListener('touchmove', e => { updateMouse(e); e.preventDefault(); resetIdleTimer(); }, { passive: false });
+window.addEventListener('keydown', e => { if (e.key.toLowerCase() === 'r') initParticles(true); });
+
+function drawBenchmarks() {
+    ctx.setLineDash([5, 5]);
+    ctx.strokeStyle = THEME_RED + '66';
+    benchmarks.forEach(bm => {
+        ctx.beginPath();
+        ctx.moveTo(0, bm.y);
+        ctx.lineTo(W, bm.y);
+        ctx.stroke();
+    });
+    ctx.setLineDash([]);
+    ctx.fillStyle = THEME_RED;
+    benchmarks.forEach(bm => {
+        ctx.font = '700 15px Inter, sans-serif';
+        const label = `END OF ${bm.year}`;
+        ctx.fillText(label, 20, bm.y - 12);
+        ctx.font = '500 11.5px Inter, sans-serif';
+        ctx.fillText(`${bm.count} DEATHS`, 55 + ctx.measureText(label).width, bm.y - 12);
+    });
+}
+
+function getDeathCountAtScroll() {
+    if (!benchmarks.length) return 980;
+    const viewCenterY = scrollY + H / 2;
+    for (let i = 0; i < benchmarks.length; i++) {
+        const bm = benchmarks[i];
+        const bandBottom = bm.y + bm.totalCount * PIXELS_PER_DEATH;
+        if (viewCenterY >= bm.y && viewCenterY < bandBottom) return bm.count;
+    }
+    // Outside all bands: clamp to nearest
+    if (viewCenterY < benchmarks[0].y) return benchmarks[0].count;
+    return benchmarks[benchmarks.length - 1].count;
+}
+
+function updateHeartbeat(time) {
+    if (lastBeatTime === null) lastBeatTime = time;
+    const dt = time - lastBeatTime;
+    lastBeatTime = time;
+
+    const MIN_DEATHS = 980, MAX_DEATHS = 3108;
+    const MIN_BPM = 40, MAX_BPM = 140;
+    const deaths = getDeathCountAtScroll();
+    const t = (deaths - MIN_DEATHS) / (MAX_DEATHS - MIN_DEATHS);
+    const targetBPM = MIN_BPM + t * (MAX_BPM - MIN_BPM);
+    const targetCycle = 60000 / targetBPM;
+    // Smooth the transition so BPM glides rather than jumps
+    smoothedCycleDuration += (targetCycle - smoothedCycleDuration) * 0.008;
+
+    beatPhase = (beatPhase + dt / smoothedCycleDuration) % 1;
+    const cycle = beatPhase * smoothedCycleDuration;
+
+    if (cycle < 150) {
+        beatIntensity = Math.sin((cycle / 150) * Math.PI);
+    } else if (cycle > 250 && cycle < 450) {
+        beatIntensity = Math.sin(((cycle - 250) / 200) * Math.PI) * 0.6;
+    } else {
+        beatIntensity *= 0.88;
+    }
+}
+
+function updateAnnotationOpacity(viewTop, viewBottom) {
+    const MAX_PILLS = 15;
+    for (const cached of narrativeCache) {
+        if (cached.worldBottom < viewTop || cached.worldTop > viewBottom) continue;
+        let count = 0;
+        for (const p of particles) {
+            if (p.y < viewTop || p.y > viewBottom) continue;
+            if (p.x >= cached.worldLeft + 4 && p.x <= cached.worldRight - 4 &&
+                p.y >= cached.worldTop + 2 && p.y <= cached.worldBottom + 2) {
+                if (++count >= MAX_PILLS) break;
+            }
+        }
+        const threshold = cached.threshold || 0;
+        const maxOpacity = cached.maxOpacity !== undefined ? cached.maxOpacity : 1.0;
+        const effective = Math.max(0, count - threshold);
+        const opacity = cached.minOpacity !== undefined
+            ? maxOpacity - Math.min(1, effective / (MAX_PILLS - threshold)) * (maxOpacity - cached.minOpacity)
+            : maxOpacity - (effective / MAX_PILLS) * 0.57;
+        cached.el.style.opacity = opacity.toFixed(2);
+    }
+
+    const scrollDist = (worldMaxHeight - H) - scrollY;
+    const introOpacity = Math.max(0, 1 - Math.max(0, scrollDist - 1800) / 1400);
+    if (introRealityGreen) introRealityGreen.style.opacity = introOpacity.toFixed(2);
+    if (introStatsRed) introStatsRed.style.opacity = introOpacity.toFixed(2);
+
+    if (moveUpHint && b2003Cached) {
+        const t = (scrollY - b2003Cached.y + 600) / 600;
+        moveUpHint.style.opacity = Math.max(0, Math.min(1, t)).toFixed(2);
+    }
+    if (reversalStatGroup) reversalStatGroup.classList.toggle('visible', scrollY < reversalTriggerY);
+}
+
+function draw(time) {
+    updateHeartbeat(time);
+
+    const scrollEdgeTop = H * 0.40;
+    const scrollEdgeBottom = H * 0.22;
+    const worldMax = worldMaxHeight - H;
+
+    if (mouse.y > -100) {
+        if (mouse.y < scrollEdgeTop) {
+            targetScrollY -= SCROLL_SPEED * (1 - mouse.y / scrollEdgeTop);
+        } else if (mouse.y > H - scrollEdgeBottom) {
+            targetScrollY += SCROLL_SPEED * (1 - (H - mouse.y) / scrollEdgeBottom);
+        }
+    }
+
+    targetScrollY = Math.max(0, Math.min(targetScrollY, worldMax));
+    scrollY += (targetScrollY - scrollY) * 0.1;
+
+    if (scrollY < 40 && !restartPending) {
+        restartPending = true;
+        if (loadingOverlay) {
+            loadingOverlay.style.opacity = '0';
+            loadingOverlay.style.transition = 'opacity 2s ease';
+            loadingOverlay.style.display = 'flex';
+            loadingOverlay.getBoundingClientRect();
+            loadingOverlay.style.opacity = '1';
+            setTimeout(() => {
+                initParticles(true);
+                loadingOverlay.style.transition = 'opacity 3s ease';
+                setTimeout(() => {
+                    loadingOverlay.style.opacity = '0';
+                    setTimeout(() => {
+                        loadingOverlay.style.display = 'none';
+                        loadingOverlay.style.transition = '';
+                        restartPending = false;
+                    }, 3000);
+                }, 400);
+            }, 2200);
+        } else {
+            initParticles(true);
+            restartPending = false;
+        }
+    }
+
+    if (worldContainer) worldContainer.style.transform = `translateY(${-scrollY}px)`;
+
+    ctx.resetTransform();
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, W, H);
+    ctx.translate(0, -scrollY);
+
+    function drawLegendCircle(x, y, color) {
+        ctx.beginPath();
+        ctx.arc(x, y, ICON_WIDTH * 1.4, 0, Math.PI * 2);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+    }
+
+    drawLegendCircle(legendAnchor.x, legendAnchor.y, THEME_RED);
+    if (greenLegendPill) drawLegendCircle(greenLegendAnchor.x, greenLegendAnchor.y, '#2ecc71');
+
+    drawBenchmarks();
+
+    const viewTop = scrollY - 100, viewBottom = scrollY + H + 100;
+    let hasCurrentInteraction = false;
+    const beatScale = 1 + beatIntensity * 0.12;
+    frameCount++;
+
+    const scrollDelta = Math.abs(scrollY - prevScrollY);
+    prevScrollY = scrollY;
+    const isFastScrolling = scrollDelta > 12;
+
+    // Count via buckets every 3 frames
+    if (frameCount % 3 === 0) {
+        const countLo = Math.floor(scrollY / BUCKET_SIZE) - 1;
+        let dc = 0, rc = 0;
+        for (let bk = countLo; bk <= maxBucketKey; bk++) {
+            const bkt = particleBuckets.get(bk);
+            if (!bkt) continue;
+            for (const p of bkt) {
+                if (p.y >= scrollY) { if (p.isGreen) rc++; else dc++; }
+            }
+        }
+        cachedDeathCount = dc; cachedReversalCount = rc;
+    }
+
+    // Physics + draw — only buckets overlapping the viewport
+    const bucketLo = Math.floor(viewTop / BUCKET_SIZE) - 1;
+    const bucketHi = Math.floor(viewBottom / BUCKET_SIZE) + 1;
+    for (let bk = bucketLo; bk <= bucketHi; bk++) {
+        const bkt = particleBuckets.get(bk);
+        if (!bkt) continue;
+        for (const p of bkt) {
+            if (p.y <= viewTop || p.y >= viewBottom) continue;
+            const dx = p.x - mouse.x, dy = p.y - (mouse.y + scrollY);
+            const distSq = dx * dx + dy * dy;
+            if (distSq < PUSH_R * PUSH_R && distSq > 0.001) {
+                hasCurrentInteraction = true;
+                const dist = Math.sqrt(distSq);
+                const s = 1 - dist / PUSH_R;
+                p.vx += (dx / dist) * PUSH_FORCE * s;
+                p.vy += (dy / dist) * PUSH_FORCE * s;
+                p.rotVel += (dx / PUSH_R) * 0.02;
+            }
+            p.vx *= FRICTION; p.vy *= FRICTION;
+            p.rotVel *= 0.94;
+            p.x += p.vx; p.y += p.vy;
+            p.rotation += p.rotVel;
+            if (p.x < ICON_WIDTH) p.x = ICON_WIDTH;
+            if (p.x > W - ICON_WIDTH) p.x = W - ICON_WIDTH;
+            ctx.save();
+            ctx.translate(p.x, p.y);
+            ctx.rotate(p.rotation);
+            ctx.scale(beatScale, beatScale);
+            ctx.drawImage(p.isGreen ? greenIconOffscreen : iconOffscreen, -ICON_WIDTH / 2, -ICON_HEIGHT / 2, ICON_WIDTH, ICON_HEIGHT);
+            ctx.restore();
+        }
+    }
+
+    // Legend pills + intro pills
+    for (const lp of [legendPill, greenLegendPill, ...introPills]) {
+        if (!lp || lp.y <= viewTop || lp.y >= viewBottom) continue;
+        const dx = lp.x - mouse.x, dy = lp.y - (mouse.y + scrollY);
+        const distSq = dx * dx + dy * dy;
+        if (distSq < PUSH_R * PUSH_R && distSq > 0.001) {
+            hasCurrentInteraction = true;
+            const dist = Math.sqrt(distSq);
+            const s = 1 - dist / PUSH_R;
+            lp.vx += (dx / dist) * PUSH_FORCE * s;
+            lp.vy += (dy / dist) * PUSH_FORCE * s;
+            lp.rotVel += (dx / PUSH_R) * 0.02;
+        }
+        lp.vx *= FRICTION; lp.vy *= FRICTION;
+        lp.rotVel *= 0.94;
+        lp.x += lp.vx; lp.y += lp.vy;
+        lp.rotation += lp.rotVel;
+        if (lp.x < ICON_WIDTH) lp.x = ICON_WIDTH;
+        if (lp.x > W - ICON_WIDTH) lp.x = W - ICON_WIDTH;
+        ctx.save();
+        ctx.translate(lp.x, lp.y);
+        ctx.rotate(lp.rotation);
+        ctx.scale(beatScale, beatScale);
+        ctx.drawImage(lp.isGreen ? greenIconOffscreen : iconOffscreen, -ICON_WIDTH / 2, -ICON_HEIGHT / 2, ICON_WIDTH, ICON_HEIGHT);
+        ctx.restore();
+    }
+
+    const passedDeathCount = cachedDeathCount, passedReversalCount = cachedReversalCount;
+
+    updateAnnotationOpacity(viewTop, viewBottom);
+
+    if (uiContainer && hasCurrentInteraction !== isActuallyInteracting) {
+        isActuallyInteracting = hasCurrentInteraction;
+        uiContainer.classList.toggle('interacting', isActuallyInteracting);
+    }
+
+    if (customCursor) {
+        const s = 3.5;
+        customCursor.style.transform = isActuallyInteracting
+            ? `translate(${(Math.random() - 0.5) * s}px, ${(Math.random() - 0.5) * s}px)`
+            : 'translate(0, 0)';
+    }
+
+    if (totalDisplay) totalDisplay.innerText = passedDeathCount.toLocaleString();
+    if (reversalDisplay) reversalDisplay.innerText = passedReversalCount.toLocaleString();
+
+    collisionThisFrame = false;
+    if (!isFastScrolling) resolveCollisions();
+    if (collisionThisFrame) playClick();
+    requestAnimationFrame(draw);
+}
+
+
+const restartTrigger = document.getElementById('restart-trigger');
+const restartBar = document.getElementById('restart-progress-bar');
+const RESTART_HOVER_MS = 1500;
+let restartHoverStart = null;
+let restartAnimFrame = null;
+
+if (restartTrigger) {
+    restartTrigger.addEventListener('mouseenter', () => {
+        restartHoverStart = performance.now();
+        function animateRestart(now) {
+            const progress = Math.min((now - restartHoverStart) / RESTART_HOVER_MS, 1);
+            restartBar.style.width = (progress * 100) + '%';
+            if (progress < 1) {
+                restartAnimFrame = requestAnimationFrame(animateRestart);
+            } else {
+                initParticles(true);
+            }
+        }
+        restartAnimFrame = requestAnimationFrame(animateRestart);
+    });
+    restartTrigger.addEventListener('mousemove', e => updateMouse(e));
+    restartTrigger.addEventListener('mouseleave', () => {
+        cancelAnimationFrame(restartAnimFrame);
+        restartHoverStart = null;
+        restartBar.style.width = '0%';
+    });
+}
+
+window.onload = () => {
+    if (loadingOverlay) loadingOverlay.style.display = 'none';
+    initParticles(true);
+    requestAnimationFrame(draw);
+    resetIdleTimer();
+};
+
+window.addEventListener('resize', () => initParticles(false));
+</script>
+</body>
+</html>
